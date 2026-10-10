@@ -69,7 +69,9 @@ func upload(_ arguments: [String]) async throws {
 
     let configuration = savedConfiguration()
     let client = OAuthClient(configuration: configuration, store: KeychainTokenStore(apiURL: configuration.apiURL))
-    let uploader = DirectUploader(apiURL: configuration.apiURL, accessToken: { try await client.accessToken() })
+    let uploader = DirectUploader(apiURL: configuration.apiURL, onEventError: { error in
+        FileHandle.standardError.write(Data("client-app: the upload event wasn't recorded: \(error.localizedDescription)\n".utf8))
+    }, accessToken: { try await client.accessToken() })
 
     let items = try arguments.flatMap { path -> [UploadItem] in
         let url = URL(filePath: (path as NSString).expandingTildeInPath).standardizedFileURL
