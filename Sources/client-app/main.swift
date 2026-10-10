@@ -104,7 +104,7 @@ do {
     case "upload": try await upload(arguments)
     case "logout":
         let configuration = savedConfiguration()
-        try OAuthClient(configuration: configuration, store: KeychainTokenStore(apiURL: configuration.apiURL)).logout()
+        try await OAuthClient(configuration: configuration, store: KeychainTokenStore(apiURL: configuration.apiURL)).logout()
         print("Signed out.")
     case "help", "--help", "-h": print(usage)
     default: fail("unknown command \(command)\n\n\(usage)")
