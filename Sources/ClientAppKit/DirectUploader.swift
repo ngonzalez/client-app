@@ -103,14 +103,79 @@ public struct DirectUploader: Sendable {
     }
 
     /// Wait until the backend attached the file
-    public func waitUntilDone(_ uuid: String, every interval: Duration = .seconds(2), timeout: Duration = .seconds(600)) async throws {
+    /// Wait until the backend attached the file: the first check after
+    /// `first`, then twice as long each time, up to `maximum` (a small file is
+    /// usually attached in well under a second)
+    public func waitUntilDone(_ uuid: String, first: Duration = .milliseconds(250), maximum: Duration = .seconds(2),
+                              timeout: Duration = .seconds(600)) async throws {
         let deadline = ContinuousClock.now + timeout
+        var interval = first
         while ContinuousClock.now < deadline {
+            try await Task.sleep(for: interval)
             let state: State = try await api("GET", "api/v1/direct_uploads/\(uuid)")
             if state.status == "done" { return }
-            try await Task.sleep(for: interval)
+            interval = min(interval * 2, maximum)
         }
         throw ClientAppError.http(status: 408, message: "The upload \(uuid) is still processing")
+    }
+
+    /// What happened to one file of `uploadAll`
+    public struct Outcome: Sendable {
+        public enum Step: Sendable { case sent, done, failed }
+        public let item: UploadItem
+        public let step: Step
+        public let uuid: String?
+        public let error: Error?
+    }
+
+    /// Upload the files `concurrency` at a time (each file's requests wait
+    /// for the network: running a few side by side is much faster), then,
+    /// with `wait`, wait until the backend attached them, all together.
+    /// `report` is told each step as it happens: `sent` or `failed` for every
+    /// file, then `done` (or `failed`) for each sent one when waiting
+    /// - Returns: every outcome, in the order they happened
+    @discardableResult
+    public func uploadAll(_ items: [UploadItem], concurrency: Int = 4, wait: Bool = false,
+                          report: @Sendable (Outcome) -> Void = { _ in }) async -> [Outcome] {
+        var outcomes: [Outcome] = []
+        let sent = await forEach(items, concurrency: concurrency) { item in
+            do {
+                return Outcome(item: item, step: .sent, uuid: try await upload(item), error: nil)
+            } catch {
+                return Outcome(item: item, step: .failed, uuid: nil, error: error)
+            }
+        } report: { outcomes.append($0); report($0) }
+        guard wait else { return outcomes }
+
+        _ = await forEach(sent.filter { $0.step == .sent }, concurrency: concurrency) { upload in
+            do {
+                try await waitUntilDone(upload.uuid!)
+                return Outcome(item: upload.item, step: .done, uuid: upload.uuid, error: nil)
+            } catch {
+                return Outcome(item: upload.item, step: .failed, uuid: upload.uuid, error: error)
+            }
+        } report: { outcomes.append($0); report($0) }
+        return outcomes
+    }
+
+    /// Run `body` on each element, at most `concurrency` at a time
+    private func forEach<Element: Sendable>(_ elements: [Element], concurrency: Int,
+                                            _ body: @escaping @Sendable (Element) async -> Outcome,
+                                            report: (Outcome) -> Void) async -> [Outcome] {
+        await withTaskGroup(of: Outcome.self) { group in
+            var results: [Outcome] = []
+            var next = elements.makeIterator()
+            for _ in 0..<max(1, concurrency) {
+                guard let element = next.next() else { break }
+                group.addTask { await body(element) }
+            }
+            for await outcome in group {
+                results.append(outcome)
+                report(outcome)
+                if let element = next.next() { group.addTask { await body(element) } }
+            }
+            return results
+        }
     }
 
     private func api<Response: Decodable>(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Response {

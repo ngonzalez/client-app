@@ -58,7 +58,9 @@ memory: a folder upload reads the Keychain once, not once per request. The
 access token is renewed when it expires (and saved again), and an expired
 refresh token asks for a new `login`.
 
-**Upload.** For each file: `POST /api/v1/direct_uploads` with its details
+**Upload.** Four files at a time; with `--wait`, the waiting starts once
+all are sent, for all of them together (checks after 0.25 s, then less
+often, up to every 2 s). For each file: `POST /api/v1/direct_uploads` with its details
 and MD5 → a signed Azure URL; `PUT` the file to it (streamed from the disk,
 up to 5000 MiB); `POST /api/v1/direct_uploads/:uuid/complete`; with
 `--wait`, `GET /api/v1/direct_uploads/:uuid` until `done`. Every response is
