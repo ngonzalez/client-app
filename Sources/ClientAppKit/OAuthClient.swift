@@ -9,6 +9,9 @@ public struct OAuthClient: Sendable {
 
     let configuration: Configuration
     let store: TokenStore
+    /// The tokens, read from the store once per client (one Keychain read
+    /// for a whole upload, not one per request)
+    let cache = TokenCache()
     let session: URLSession
 
     public init(configuration: Configuration, store: TokenStore, session: URLSession = .shared) {
@@ -54,6 +57,7 @@ public struct OAuthClient: Sendable {
             "code_verifier": pkce.verifier,
         ])
         try store.save(token)
+        await cache.set(token)
         return token
     }
 
@@ -69,7 +73,7 @@ public struct OAuthClient: Sendable {
 
     /// A valid access token: the stored one, or a renewed one
     public func accessToken() async throws -> String {
-        guard let token = try store.load() else { throw ClientAppError.notSignedIn }
+        guard let token = try await cache.current(from: store) else { throw ClientAppError.notSignedIn }
         if !token.isExpired() { return token.accessToken }
         guard let refreshToken = token.refreshToken else { throw ClientAppError.notSignedIn }
 
@@ -80,16 +84,19 @@ public struct OAuthClient: Sendable {
                 "client_id": configuration.clientID,
             ])
             try store.save(renewed)
+            await cache.set(renewed)
             return renewed.accessToken
         } catch ClientAppError.http(let status, _) where status == 400 || status == 401 {
             // The refresh token expired or was revoked: sign in again
             try store.delete()
+            await cache.set(nil)
             throw ClientAppError.notSignedIn
         }
     }
 
-    public func logout() throws {
+    public func logout() async throws {
         try store.delete()
+        await cache.set(nil)
     }
 
     private func requestToken(_ form: [String: String]) async throws -> Token {
@@ -116,5 +123,25 @@ public struct OAuthClient: Sendable {
         return Data(form.sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }
             .joined(separator: "&").utf8)
+    }
+}
+
+/// The tokens kept in memory: the store (the Keychain) is read the first
+/// time they are needed, then only written when they change
+actor TokenCache {
+    private var token: Token?
+    private var loaded = false
+
+    func current(from store: TokenStore) throws -> Token? {
+        if !loaded {
+            token = try store.load()
+            loaded = true
+        }
+        return token
+    }
+
+    func set(_ token: Token?) {
+        self.token = token
+        loaded = true
     }
 }

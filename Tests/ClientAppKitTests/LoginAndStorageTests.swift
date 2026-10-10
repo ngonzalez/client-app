@@ -107,13 +107,74 @@ extension Stubbed {
         #expect(try store.load() == nil)
     }
 
-    @Test func logoutForgetsTheTokens() throws {
+    @Test func logoutForgetsTheTokens() async throws {
         let store = MemoryTokenStore()
-        try store.save(Token(accessToken: "a", refreshToken: "r", expiresAt: Date()))
+        try store.save(Token(accessToken: "a", refreshToken: "r", expiresAt: Date().addingTimeInterval(3600)))
+        let client = OAuthClient(configuration: configuration, store: store)
+        #expect(try await client.accessToken() == "a")
 
-        try OAuthClient(configuration: configuration, store: store).logout()
+        try await client.logout()
 
         #expect(try store.load() == nil)
+        await #expect(throws: ClientAppError.notSignedIn) { try await client.accessToken() }
+    }
+
+    // MARK: One Keychain read per command
+
+    @Test func readsTheStoreOnceForManyRequests() async throws {
+        let store = CountingTokenStore(Token(accessToken: "valid", refreshToken: "r", expiresAt: Date().addingTimeInterval(3600)))
+        let client = OAuthClient(configuration: configuration, store: store, session: session)
+
+        for _ in 0..<50 { #expect(try await client.accessToken() == "valid") }
+
+        #expect(store.loads == 1)
+        #expect(store.saves == 0)
+    }
+
+    @Test func aRenewedTokenIsSavedOnceAndKeptInMemory() async throws {
+        let store = CountingTokenStore(Token(accessToken: "old", refreshToken: "refresh", expiresAt: Date().addingTimeInterval(-10)))
+        StubProtocol.responses = [Self.tokens]
+        let client = OAuthClient(configuration: configuration, store: store, session: session)
+
+        for _ in 0..<10 { #expect(try await client.accessToken() == "access") }
+
+        #expect(store.loads == 1)
+        #expect(store.saves == 1)
+        #expect(StubProtocol.requests.count == 1)
+    }
+
+    @Test func aLoginIsUsedWithoutReadingTheStoreAgain() async throws {
+        StubProtocol.responses = [Self.tokens]
+        let store = CountingTokenStore(nil)
+        let client = OAuthClient(configuration: configuration, store: store, session: session)
+
+        try await client.login(openURL: Self.browser { authorize in
+            [URLQueryItem(name: "code", value: "c"), URLQueryItem(name: "state", value: Self.value("state", in: authorize))]
+        })
+
+        #expect(try await client.accessToken() == "access")
+        #expect(store.loads == 0)
+    }
+
+    @Test func aRefusedRenewalForgetsTheCachedTokens() async throws {
+        let store = CountingTokenStore(Token(accessToken: "old", refreshToken: "revoked", expiresAt: Date().addingTimeInterval(-10)))
+        StubProtocol.responses = [NetworkTests.json(400, ["error": "invalid_grant"])]
+        let client = OAuthClient(configuration: configuration, store: store, session: session)
+
+        await #expect(throws: ClientAppError.notSignedIn) { try await client.accessToken() }
+        await #expect(throws: ClientAppError.notSignedIn) { try await client.accessToken() }
+
+        #expect(store.loads == 1)
+        #expect(StubProtocol.requests.count == 1)
+    }
+
+    @Test func eachCommandReadsTheStoreAgain() async throws {
+        let store = CountingTokenStore(Token(accessToken: "valid", refreshToken: "r", expiresAt: Date().addingTimeInterval(3600)))
+
+        _ = try await OAuthClient(configuration: configuration, store: store).accessToken()
+        _ = try await OAuthClient(configuration: configuration, store: store).accessToken()
+
+        #expect(store.loads == 2)
     }
 
     // MARK: Keychain and settings
@@ -178,4 +239,21 @@ final class ChallengeBox: @unchecked Sendable {
     private var stored: String?
     func set(_ value: String?) { lock.withLock { stored = value } }
     var value: String? { lock.withLock { stored } }
+}
+
+/// A token store that counts how often it is read and written
+final class CountingTokenStore: TokenStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var token: Token?
+    private var loadCount = 0
+    private var saveCount = 0
+
+    init(_ token: Token?) { self.token = token }
+
+    var loads: Int { lock.withLock { loadCount } }
+    var saves: Int { lock.withLock { saveCount } }
+
+    func load() throws -> Token? { lock.withLock { loadCount += 1; return token } }
+    func save(_ token: Token) throws { lock.withLock { saveCount += 1; self.token = token } }
+    func delete() throws { lock.withLock { token = nil } }
 }

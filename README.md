@@ -53,8 +53,10 @@ files are skipped.
 pages, the browser comes back to `http://127.0.0.1:<port>/callback` with a
 code, which the app exchanges with its PKCE verifier for an access token
 (1 hour) and a refresh token. Both are kept in the login keychain
-(service `site.appshare.client-app`); the access token is renewed when it
-expires, and an expired refresh token asks for a new `login`.
+(service `site.appshare.client-app`), read once per command and kept in
+memory: a folder upload reads the Keychain once, not once per request. The
+access token is renewed when it expires (and saved again), and an expired
+refresh token asks for a new `login`.
 
 **Upload.** For each file: `POST /api/v1/direct_uploads` with its details
 and MD5 → a signed Azure URL; `PUT` the file to it (streamed from the disk,
