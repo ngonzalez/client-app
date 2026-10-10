@@ -36,6 +36,7 @@ import Testing
     // MARK: DirectUploader
 
     @Test func uploadsInOnePutBetweenTheTwoAPICalls() async throws {
+        // a backend that doesn't send the account: no event
         StubProtocol.responses = [Self.created, (201, Data()), Self.json(202, ["uuid": Self.uuid, "status": "processing"])]
 
         #expect(try await uploader.upload(UploadItem(url: file, source: .folder)) == Self.uuid)
@@ -56,6 +57,46 @@ import Testing
         #expect(requests[1].headers["x-ms-blob-type"] == "BlockBlob")
 
         #expect(requests[2].url == "https://api.example.test/api/v1/direct_uploads/\(Self.uuid)/complete")
+    }
+
+    static let completed = json(202, ["uuid": uuid, "status": "processing", "accountUuid": "8683e470-9ce2-4c56-8814-20e751b7bdc3"])
+
+    @Test func recordsTheUploadEventOfTheAccount() async throws {
+        StubProtocol.responses = [Self.created, (201, Data()), Self.completed, Self.json(200, ["event": [:]])]
+
+        #expect(try await uploader.upload(UploadItem(url: file, source: .folder)) == Self.uuid)
+
+        let requests = StubProtocol.requests
+        try #require(requests.count == 4)
+        let event = requests[3]
+        #expect(event.method == "POST")
+        #expect(event.url == "https://api.example.test/event")
+        #expect(event.headers["Authorization"] == nil)
+        let body = try #require(try JSONSerialization.jsonObject(with: event.body) as? [String: Any])
+        #expect(body["accountUuid"] as? String == "8683e470-9ce2-4c56-8814-20e751b7bdc3")
+        #expect(body["eventType"] as? String == "upload")
+        #expect(body["url"] as? String == "https://api.example.test/upload/\(Self.uuid)")
+        let encoded = try #require(body["parameters"] as? String)
+        let decoded = try #require(Data(base64Encoded: encoded))
+        let parameters = try #require(try JSONSerialization.jsonObject(with: decoded) as? [String: Any])
+        let upload = try #require(parameters["uploadDetails"] as? [String: Any])
+        #expect(upload["fileSize"] as? Int == 5)
+        #expect(upload["fileName"] as? String == file.path)
+        #expect(upload["mimeType"] as? String == "image/png")
+        let platform = try #require(parameters["platformDetails"] as? [String: String])
+        #expect(platform["Application"] == "client-app")
+        #expect(platform["Platform"] == "macOS")
+    }
+
+    @Test func aFailedEventDoesNotFailTheUpload() async throws {
+        StubProtocol.responses = [Self.created, (201, Data()), Self.completed, Self.json(422, ["message": "Invalid event"])]
+        let errors = ErrorBox()
+        let uploader = DirectUploader(apiURL: URL(string: "https://api.example.test")!, session: session,
+                                      onEventError: { errors.append($0) }, accessToken: { "access" })
+
+        #expect(try await uploader.upload(UploadItem(url: file)) == Self.uuid)
+        #expect(errors.all.count == 1)
+        #expect(errors.all.first as? ClientAppError == .http(status: 422, message: "Invalid event"))
     }
 
     @Test func aRefusedFileIsNotSent() async {
@@ -172,4 +213,12 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         }
         return data
     }
+}
+
+/// The errors a closure reported, for the tests
+final class ErrorBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var errors: [Error] = []
+    func append(_ error: Error) { lock.withLock { errors.append(error) } }
+    var all: [Error] { lock.withLock { errors } }
 }
