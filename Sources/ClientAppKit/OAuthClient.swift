@@ -73,24 +73,12 @@ public struct OAuthClient: Sendable {
 
     /// A valid access token: the stored one, or a renewed one
     public func accessToken() async throws -> String {
-        guard let token = try await cache.current(from: store) else { throw ClientAppError.notSignedIn }
-        if !token.isExpired() { return token.accessToken }
-        guard let refreshToken = token.refreshToken else { throw ClientAppError.notSignedIn }
-
-        do {
-            let renewed = try await requestToken([
+        try await cache.accessToken(store: store) { refreshToken in
+            try await requestToken([
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
                 "client_id": configuration.clientID,
             ])
-            try store.save(renewed)
-            await cache.set(renewed)
-            return renewed.accessToken
-        } catch ClientAppError.http(let status, _) where status == 400 || status == 401 {
-            // The refresh token expired or was revoked: sign in again
-            try store.delete()
-            await cache.set(nil)
-            throw ClientAppError.notSignedIn
         }
     }
 
@@ -127,10 +115,14 @@ public struct OAuthClient: Sendable {
 }
 
 /// The tokens kept in memory: the store (the Keychain) is read the first
-/// time they are needed, then only written when they change
+/// time they are needed, then only written when they change. An expired
+/// token is renewed once, even when several uploads need it at the same
+/// time: they all wait for that one renewal (a refresh token is replaced
+/// when it is used, so a second renewal with it could be refused)
 actor TokenCache {
     private var token: Token?
     private var loaded = false
+    private var renewal: Task<Token, Error>?
 
     func current(from store: TokenStore) throws -> Token? {
         if !loaded {
@@ -143,5 +135,42 @@ actor TokenCache {
     func set(_ token: Token?) {
         self.token = token
         loaded = true
+    }
+
+    /// A valid access token: the kept one, or one renewal shared by everyone
+    /// asking meanwhile
+    func accessToken(store: TokenStore, renew: @escaping @Sendable (String) async throws -> Token) async throws -> String {
+        if let renewal { return try await finish(renewal, store: store).accessToken }
+        guard let token = try current(from: store) else { throw ClientAppError.notSignedIn }
+        if !token.isExpired() { return token.accessToken }
+        guard let refreshToken = token.refreshToken else { throw ClientAppError.notSignedIn }
+
+        let task = Task { try await renew(refreshToken) }
+        renewal = task
+        return try await finish(task, store: store).accessToken
+    }
+
+    /// The outcome of a renewal, saved once: a refused one (400, 401) means
+    /// the refresh token expired or was revoked, so sign in again
+    private func finish(_ task: Task<Token, Error>, store: TokenStore) async throws -> Token {
+        do {
+            let renewed = try await task.value
+            if renewal == task {
+                renewal = nil
+                try store.save(renewed)
+                token = renewed
+            }
+            return renewed
+        } catch ClientAppError.http(let status, _) where status == 400 || status == 401 {
+            if renewal == task {
+                renewal = nil
+                try store.delete()
+                token = nil
+            }
+            throw ClientAppError.notSignedIn
+        } catch {
+            if renewal == task { renewal = nil }
+            throw error
+        }
     }
 }

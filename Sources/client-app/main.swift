@@ -80,19 +80,18 @@ func upload(_ arguments: [String]) async throws {
         return isDirectory.boolValue ? try UploadItem.items(inFolder: url) : [UploadItem(url: url)]
     }
 
-    var failures = 0
-    for item in items {
-        do {
-            let uuid = try await uploader.upload(item)
-            if wait { try await uploader.waitUntilDone(uuid) }
-            print("\(wait ? "done" : "sent")  \(item.url.path)  \(uuid)")
-        } catch ClientAppError.notSignedIn {
-            fail(ClientAppError.notSignedIn.localizedDescription)
-        } catch {
-            failures += 1
-            print("failed  \(item.url.path)  \(error.localizedDescription)")
+    // four files at a time; with --wait, the waiting starts once all are sent
+    let outcomes = await uploader.uploadAll(items, concurrency: 4, wait: wait) { outcome in
+        switch outcome.step {
+        case .sent: print("sent    \(outcome.item.url.path)  \(outcome.uuid ?? "")")
+        case .done: print("done    \(outcome.item.url.path)  \(outcome.uuid ?? "")")
+        case .failed: print("failed  \(outcome.item.url.path)  \(outcome.error?.localizedDescription ?? "")")
         }
     }
+    if outcomes.contains(where: { ($0.error as? ClientAppError) == .notSignedIn }) {
+        fail(ClientAppError.notSignedIn.localizedDescription)
+    }
+    let failures = outcomes.filter { $0.step == .failed }.count
     if failures > 0 { fail("\(failures) of \(items.count) files failed") }
 }
 
