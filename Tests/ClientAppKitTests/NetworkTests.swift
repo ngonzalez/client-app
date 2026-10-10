@@ -4,7 +4,8 @@ import Testing
 
 /// The uploader and the token renewal against a stubbed network
 /// (`StubProtocol` records the requests and answers in order)
-@Suite(.serialized) struct NetworkTests {
+extension Stubbed {
+@Suite struct NetworkTests {
     static let uuid = "0f8fad5b-d9cb-469f-a165-70867728950e"
     static let signedURL = "https://storage.example.test/container/key?sig=abc"
 
@@ -167,6 +168,7 @@ import Testing
         await #expect(throws: ClientAppError.self) { try await client(store).accessToken() }
         #expect(try store.load()?.refreshToken == "refresh")
     }
+}
 }
 
 /// Records each request and answers with the next queued response
