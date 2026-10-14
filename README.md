@@ -1,8 +1,11 @@
 # client-app
 
 A Swift client for the appshare backend: it signs the user in through the
-browser, like `az login`, and uploads files straight to Azure Blob Storage,
-in one request per file and without chunks.
+browser, like `az login`, uploads files straight to Azure Blob Storage, in
+one request per file and without chunks, and lists, publishes, archives and
+deletes the account's folders. It calls the same endpoints as DemoApp and
+MauiApp (`/upload/direct`, `/folders`), with its OAuth token instead of their
+session token.
 
 ## Layout
 
@@ -31,6 +34,10 @@ swift test
 client-app login --client-id <ID>       # opens the browser: sign in, then Allow
 client-app upload photo.jpg notes.pdf   # files
 client-app upload --wait ~/Pictures/Holidays   # every file of a folder, down to two levels
+client-app folders                      # the account's folders, by name: id, state, name, tags
+client-app folders beach --state published --all   # by name or tag, in a state, every page
+client-app publish 12 15                # also unpublish, archive, unarchive
+client-app delete 12                    # asks first; --yes to skip the question
 client-app logout
 ```
 
@@ -40,6 +47,17 @@ client-app logout
 | `--api-url URL` | login | another backend (default `https://api.appshare.site`); saved too |
 | `--no-browser` | login | only print the sign-in address (to open it elsewhere) |
 | `--wait` | upload | wait until the backend has processed each file |
+| `--state STATE` | folders | only the `created`, `published` or `archived` ones |
+| `--page N`, `--per-page N` | folders | another page; 5, 10, 25 (default) or 100 a page |
+| `--all` | folders | every page |
+| `--yes` | delete | no question (needed when the input isn't a terminal) |
+
+The sign-in asks for the scopes `uploads.write`, `folders.read` and
+`folders.write`. A token from before the folder commands only has
+`uploads.write`: the folder commands then ask for a new `client-app login`.
+The registered app needs the scopes too: `NAME="Client App" bin/rails
+oauth:register` adds them to an app already registered, keeping its client
+id.
 
 A folder's files are named like DemoApp's import: files in the folder go
 to a folder named after it, files one level down to "<folder> <subfolder>",
@@ -60,8 +78,8 @@ refresh token asks for a new `login`.
 
 **Upload.** Four files at a time; with `--wait`, the waiting starts once
 all are sent, for all of them together (checks after 0.25 s, then less
-often, up to every 2 s). For each file: `POST /api/v1/direct_uploads` with its details
+often, up to every 2 s). For each file: `POST /upload/direct` with its details
 and MD5 → a signed Azure URL; `PUT` the file to it (streamed from the disk,
-up to 5000 MiB); `POST /api/v1/direct_uploads/:uuid/complete`; with
-`--wait`, `GET /api/v1/direct_uploads/:uuid` until `done`. Every response is
+up to 5000 MiB); `POST /upload/direct/:uuid/complete`; with
+`--wait`, `GET /upload/direct/:uuid` until `done`. Every response is
 checked: a failed file is reported and the others go on (exit code 1).

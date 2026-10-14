@@ -5,7 +5,8 @@ import Foundation
 /// exchange the code (with the PKCE verifier) for tokens. Then hands out a
 /// valid access token, renewing it with the refresh token when it expires.
 public struct OAuthClient: Sendable {
-    public static let scope = "uploads.write"
+    /// Upload files, list and search the folders, change and delete them
+    public static let scope = "uploads.write folders.read folders.write"
 
     let configuration: Configuration
     let store: TokenStore

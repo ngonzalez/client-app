@@ -1,12 +1,13 @@
 import Foundation
 
-/// Uploads a file straight to the storage, in one PUT and without chunks:
-/// 1. `POST /api/v1/direct_uploads`: the file's details → a signed URL
+/// Uploads a file straight to the storage, in one PUT and without chunks,
+/// through the endpoints DemoApp and MauiApp use too (scope `uploads.write`):
+/// 1. `POST /upload/direct`: the file's details → a signed URL
 /// 2. `PUT` the file to that URL (streamed from the disk)
-/// 3. `POST /api/v1/direct_uploads/:uuid/complete`
+/// 3. `POST /upload/direct/:uuid/complete`
 /// 4. `POST /event`: the upload `Event` of the account, like DemoApp and
 ///    MauiApp record (a failed event doesn't fail the upload)
-/// 5. `GET /api/v1/direct_uploads/:uuid` until `done` (optional)
+/// 5. `GET /upload/direct/:uuid` until `done` (optional)
 public struct DirectUploader: Sendable {
     public struct Created: Decodable, Sendable {
         public struct DirectUpload: Decodable, Sendable {
@@ -26,7 +27,7 @@ public struct DirectUploader: Sendable {
     }
 
     let apiURL: URL
-    let accessToken: @Sendable () async throws -> String
+    let api: APIClient
     let session: URLSession
     let onEventError: @Sendable (Error) -> Void
 
@@ -37,14 +38,14 @@ public struct DirectUploader: Sendable {
         self.apiURL = apiURL
         self.session = session
         self.onEventError = onEventError
-        self.accessToken = accessToken
+        api = APIClient(apiURL: apiURL, session: session, accessToken: accessToken)
     }
 
     /// Upload one file
     /// - Returns: the upload's uuid, once the backend took it (`processing`)
     public func upload(_ item: UploadItem) async throws -> String {
         let details = try FileDetails(url: item.url)
-        let created: Created = try await api("POST", "api/v1/direct_uploads", body: [
+        let created: Created = try await api.send("POST", "upload/direct", body: [
             "filePath": item.url.path,
             "source": item.source.rawValue,
             "mimeType": details.mimeType,
@@ -60,7 +61,7 @@ public struct DirectUploader: Sendable {
         let (data, response) = try await session.upload(for: put, fromFile: item.url)
         _ = try checked(data, response)
 
-        let state: State = try await api("POST", "api/v1/direct_uploads/\(created.uuid)/complete", body: ["signedBlobId": created.signedBlobId])
+        let state: State = try await api.send("POST", "upload/direct/\(created.uuid)/complete", body: ["signedBlobId": created.signedBlobId])
         if let accountUuid = state.accountUuid {
             do {
                 try await recordEvent(accountUuid: accountUuid, uploadUuid: state.uuid, item: item, details: details)
@@ -112,7 +113,7 @@ public struct DirectUploader: Sendable {
         var interval = first
         while ContinuousClock.now < deadline {
             try await Task.sleep(for: interval)
-            let state: State = try await api("GET", "api/v1/direct_uploads/\(uuid)")
+            let state: State = try await api.send("GET", "upload/direct/\(uuid)")
             if state.status == "done" { return }
             interval = min(interval * 2, maximum)
         }
@@ -176,18 +177,5 @@ public struct DirectUploader: Sendable {
             }
             return results
         }
-    }
-
-    private func api<Response: Decodable>(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Response {
-        var request = URLRequest(url: apiURL.appending(path: path))
-        request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(try await accessToken())", forHTTPHeaderField: "Authorization")
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        let (data, response) = try await session.data(for: request)
-        return try JSONDecoder().decode(Response.self, from: try checked(data, response))
     }
 }

@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         // Sign-in through the browser (OAuth + PKCE) and direct uploads to Azure
         .target(name: "ClientAppKit"),
-        // The command line: client-app login | upload | logout
+        // The command line: client-app login | upload | folders | publish... | delete | logout
         .executableTarget(name: "client-app", dependencies: ["ClientAppKit"]),
         .testTarget(name: "ClientAppKitTests", dependencies: ["ClientAppKit"]),
     ]
