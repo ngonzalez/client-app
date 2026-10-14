@@ -28,7 +28,7 @@ import Testing
         #expect(url.path() == "/oauth/authorize")
         #expect(items["client_id"] == "the-client")
         #expect(items["response_type"] == "code")
-        #expect(items["scope"] == "uploads.write")
+        #expect(items["scope"] == "uploads.write folders.read folders.write")
         #expect(items["state"] == "xyz")
         #expect(items["code_challenge"] == pkce.challenge)
         #expect(items["code_challenge_method"] == "S256")

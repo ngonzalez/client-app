@@ -44,7 +44,7 @@ extension Stubbed {
 
         let requests = StubProtocol.requests
         try #require(requests.count == 3)
-        #expect(requests[0].url == "https://api.example.test/api/v1/direct_uploads")
+        #expect(requests[0].url == "https://api.example.test/upload/direct")
         #expect(requests[0].headers["Authorization"] == "Bearer access")
         let details = try #require(try JSONSerialization.jsonObject(with: requests[0].body) as? [String: Any])
         #expect(details["source"] as? String == "folder")
@@ -57,7 +57,7 @@ extension Stubbed {
         #expect(requests[1].headers["Authorization"] == nil)
         #expect(requests[1].headers["x-ms-blob-type"] == "BlockBlob")
 
-        #expect(requests[2].url == "https://api.example.test/api/v1/direct_uploads/\(Self.uuid)/complete")
+        #expect(requests[2].url == "https://api.example.test/upload/direct/\(Self.uuid)/complete")
     }
 
     static let completed = json(202, ["uuid": uuid, "status": "processing", "accountUuid": "8683e470-9ce2-4c56-8814-20e751b7bdc3"])
@@ -121,7 +121,7 @@ extension Stubbed {
 
         try await uploader.waitUntilDone(Self.uuid, first: .milliseconds(1))
 
-        #expect(StubProtocol.requests.map(\.url) == Array(repeating: "https://api.example.test/api/v1/direct_uploads/\(Self.uuid)", count: 2))
+        #expect(StubProtocol.requests.map(\.url) == Array(repeating: "https://api.example.test/upload/direct/\(Self.uuid)", count: 2))
     }
 
     @Test func stopsWaitingAfterTheTimeout() async {
@@ -139,7 +139,7 @@ extension Stubbed {
         let counter = Counter()
         return { request in
             switch (request.method, request.url) {
-            case ("POST", let url) where url.hasSuffix("/api/v1/direct_uploads"):
+            case ("POST", let url) where url.hasSuffix("/upload/direct"):
                 let body = (try? JSONSerialization.jsonObject(with: request.body) as? [String: Any]) ?? [:]
                 if let failedName, (body["filePath"] as? String)?.hasSuffix(failedName) == true {
                     return json(422, ["message": "This file type is not supported"])
