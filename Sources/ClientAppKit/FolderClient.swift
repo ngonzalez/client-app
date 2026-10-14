@@ -77,9 +77,13 @@ public struct FolderClient: Sendable {
     }
 
     /// Publish, unpublish, archive, unarchive or delete folders; a folder
-    /// that can't take the action (an archived one published again, say)
-    /// is left as it is
-    public func perform(_ action: Action, ids: [Int]) async throws {
-        try await api.send("POST", "folders/\(action.rawValue)", body: ["id": ids])
+    /// that can't take the action (an archived one archived again, say), or
+    /// isn't the account's, is left as it is
+    /// - Returns: the ids of the folders it changed
+    @discardableResult
+    public func perform(_ action: Action, ids: [Int]) async throws -> [Int] {
+        struct Changed: Decodable { let ids: [Int] }
+        let changed: Changed = try await api.send("POST", "folders/\(action.rawValue)", body: ["id": ids])
+        return changed.ids
     }
 }

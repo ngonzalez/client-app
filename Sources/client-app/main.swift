@@ -134,8 +134,12 @@ func change(_ action: FolderClient.Action, _ arguments: [String]) async throws {
         fflush(stdout)
         guard ["y", "yes"].contains(readLine()?.lowercased() ?? "") else { fail("nothing deleted") }
     }
-    try await folderClient().perform(action, ids: ids)
-    print("\(action.rawValue): \(ids.map(String.init).joined(separator: " "))")
+    let changed = try await folderClient().perform(action, ids: ids)
+    if !changed.isEmpty { print("\(action.rawValue): \(changed.map(String.init).joined(separator: " "))") }
+    let skipped = ids.filter { !changed.contains($0) }
+    if !skipped.isEmpty {
+        fail("unchanged: \(skipped.map(String.init).joined(separator: " ")) (not your folders, or already in that state)")
+    }
 }
 
 func upload(_ arguments: [String]) async throws {

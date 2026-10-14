@@ -76,9 +76,9 @@ extension Stubbed {
 
     @Test(arguments: FolderClient.Action.allCases)
     func changesTheFolders(_ action: FolderClient.Action) async throws {
-        StubProtocol.responses = [(200, Data())]
+        StubProtocol.responses = [(200, try JSONSerialization.data(withJSONObject: ["ids": [3]]))]
 
-        try await client.perform(action, ids: [3, 5])
+        #expect(try await client.perform(action, ids: [3, 5]) == [3])
 
         let request = try #require(StubProtocol.requests.first)
         #expect(request.method == "POST")
