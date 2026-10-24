@@ -68,6 +68,14 @@ extension Stubbed {
         #expect(abs(now.timeIntervalSinceNow) < 60)
     }
 
+    @Test func tellsTheBackendsErrors() async throws {
+        StubProtocol.responses = [Self.json(["errors": ["Event type is not included in the list", "Parameters service must be one of website, api"]], status: 422)]
+
+        await #expect(throws: ClientAppError.http(status: 422, message: "Event type is not included in the list; Parameters service must be one of website, api")) {
+            _ = try await client.add(type: "outage", title: "x", service: "mail")
+        }
+    }
+
     @Test func refusesWithoutTheRight() async throws {
         StubProtocol.responses = [(403, Data())]
 
