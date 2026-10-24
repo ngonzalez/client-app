@@ -69,6 +69,9 @@ func login(_ arguments: [String]) async throws {
     }
     let openBrowser = !flag("--no-browser", in: &arguments)
     let scope = flag("--status", in: &arguments) ? OAuthClient.statusScope : OAuthClient.scope
+    if let unknown = arguments.first {
+        fail(unknown.hasPrefix("--") ? "unknown option \(unknown)" : "\(unknown): give the client id with --client-id")
+    }
     guard let configuration else { fail("no client id: run `client-app login --client-id ID`") }
     try configuration.save()
 
