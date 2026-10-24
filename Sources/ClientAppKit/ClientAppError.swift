@@ -24,7 +24,9 @@ func checked(_ data: Data, _ response: URLResponse) throws -> Data {
     guard let http = response as? HTTPURLResponse else { throw ClientAppError.invalidResponse }
     guard (200..<300).contains(http.statusCode) else {
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let message = (json?["message"] ?? json?["error_description"] ?? json?["error"]) as? String
+        // the backend's validation errors come as a list (`errors`)
+        let errors = (json?["errors"] as? [String]).flatMap { $0.isEmpty ? nil : $0.joined(separator: "; ") }
+        let message = errors ?? (json?["message"] ?? json?["error_description"] ?? json?["error"]) as? String
         throw ClientAppError.http(status: http.statusCode, message: message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
     }
     return data

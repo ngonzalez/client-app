@@ -221,7 +221,7 @@ func status(_ arguments: [String]) async throws {
         status.events.forEach(printEvent)
         if status.events.isEmpty { print("No events in the past 90 days.") }
     case "add":
-        let service = option("--service", in: &arguments)
+        let service = option("--service", in: &arguments)?.lowercased()
         let description = option("--description", in: &arguments)
         let at = time("--at", in: &arguments)
         let until = time("--until", in: &arguments)
@@ -236,7 +236,7 @@ func status(_ arguments: [String]) async throws {
     case "edit":
         let title = option("--title", in: &arguments)
         let description = option("--description", in: &arguments)
-        let service = option("--service", in: &arguments)
+        let service = option("--service", in: &arguments)?.lowercased()
         printEvent(try await client.edit(eventID(&arguments, subcommand), title: title, description: description, service: service))
     case "delete":
         let confirmed = flag("--yes", in: &arguments)
