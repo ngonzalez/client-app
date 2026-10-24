@@ -38,7 +38,20 @@ client-app folders                      # the account's folders, by name: id, st
 client-app folders beach --state published --all   # by name or tag, in a state, every page
 client-app publish 12 15                # also unpublish, archive, unarchive
 client-app delete 12                    # asks first; --yes to skip the question
+client-app account                      # the account at a glance: site, user, folders by state, files
+client-app status                       # the status page's events (status.appshare.site), newest first
 client-app logout
+```
+
+A status admin (`status_admin` on the backend) enters the status page's
+events, once signed in with `client-app login --status`:
+
+```bash
+client-app status add incident "Slow uploads" --service api   # from now; --at / --until "2026-10-24 14:20"
+client-app status add maintenance "Database upgrade" --at "2026-10-25 22:00" --until "2026-10-25 23:00"
+client-app status end 12                # end an incident or a maintenance, now (or --at)
+client-app status edit 12 --description "Uploads are back to normal speed"
+client-app status delete 12             # asks first; --yes to skip the question
 ```
 
 | Option | Command | What |

@@ -5,8 +5,11 @@ import Foundation
 /// exchange the code (with the PKCE verifier) for tokens. Then hands out a
 /// valid access token, renewing it with the refresh token when it expires.
 public struct OAuthClient: Sendable {
-    /// Upload files, list and search the folders, change and delete them
-    public static let scope = "uploads.write folders.read folders.write"
+    /// Upload files, list and search the folders, change and delete them,
+    /// show the account's summary
+    public static let scope = "uploads.write folders.read folders.write account.show"
+    /// With the status page's events too (status admins only: `login --status`)
+    public static let statusScope = scope + " status.admin"
 
     let configuration: Configuration
     let store: TokenStore
@@ -22,13 +25,13 @@ public struct OAuthClient: Sendable {
     }
 
     /// The approval page's address for this sign-in
-    public func authorizeURL(redirectURI: String, pkce: PKCE, state: String) -> URL {
+    public func authorizeURL(redirectURI: String, pkce: PKCE, state: String, scope: String = OAuthClient.scope) -> URL {
         var components = URLComponents(url: configuration.apiURL.appending(path: "oauth/authorize"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "client_id", value: configuration.clientID),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: OAuthClient.scope),
+            URLQueryItem(name: "scope", value: scope),
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: pkce.method),
@@ -37,9 +40,11 @@ public struct OAuthClient: Sendable {
     }
 
     /// Sign in through the browser and keep the tokens
-    /// - Parameter openURL: opens the approval page (in the default browser)
+    /// - Parameters:
+    ///   - scope: what the sign-in allows (`statusScope` for a status admin)
+    ///   - openURL: opens the approval page (in the default browser)
     @discardableResult
-    public func login(openURL: @Sendable (URL) -> Void) async throws -> Token {
+    public func login(scope: String = OAuthClient.scope, openURL: @Sendable (URL) -> Void) async throws -> Token {
         let server = try LoopbackServer()
         defer { server.stop() }
         let port = try await server.start()
@@ -47,7 +52,7 @@ public struct OAuthClient: Sendable {
         let pkce = PKCE()
         let state = PKCE.randomString()
 
-        openURL(authorizeURL(redirectURI: redirectURI, pkce: pkce, state: state))
+        openURL(authorizeURL(redirectURI: redirectURI, pkce: pkce, state: state, scope: scope))
         let code = try OAuthClient.code(from: try await server.waitForCallback(), state: state)
 
         let token = try await requestToken([
