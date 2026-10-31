@@ -82,10 +82,11 @@ extension Stubbed {
         await #expect(throws: ClientAppError.self) { try await client.delete(12) }
     }
 
-    @Test func sumsUpTheAccount() async throws {
+    @Test func sumsUpTheAccountWithItsPlan() async throws {
         StubProtocol.responses = [Self.json([
-            "account": ["name": "Acme", "subdomain": "acme", "siteUrl": "https://acme.appshare.site"],
-            "user": ["name": "Anna Smith", "emailAddress": "anna@example.com", "statusAdmin": true],
+            "account": ["name": "Acme", "subdomain": "acme", "siteUrl": "https://acme.appshare.site",
+                        "plan": ["name": "5GB", "storage": ["used": 51_357_725, "limit": 5_368_709_120], "users": ["count": 1, "limit": 3]]],
+            "user": ["name": "Anna Smith", "emailAddress": "anna@example.com", "admin": true, "statusAdmin": true],
             "folders": ["created": 1, "published": 2, "archived": 0, "total": 3],
             "files": ["count": 4, "byteSize": 2048, "lastUploadAt": NSNull()],
         ])]
@@ -93,11 +94,39 @@ extension Stubbed {
         let summary = try await AccountClient(apiURL: URL(string: "https://api.example.test")!, session: session, accessToken: { "access" }).summary()
 
         #expect(summary.account.subdomain == "acme")
-        #expect(summary.user.statusAdmin)
+        #expect(summary.account.plan == PlanUsage(name: "5GB", storage: .init(used: 51_357_725, limit: 5_368_709_120), users: .init(count: 1, limit: 3)))
+        #expect(summary.user.isAdmin)
         #expect(summary.folders == AccountClient.Summary.Folders(created: 1, published: 2, archived: 0, total: 3))
         #expect(summary.files.lastUploadAt == nil)
         #expect(StubProtocol.requests.first?.url == "https://api.example.test/account")
         #expect(StubProtocol.requests.first?.headers["Authorization"] == "Bearer access")
+    }
+
+    @Test func readsTheSummaryOfABackendBeforePlans() async throws {
+        StubProtocol.responses = [Self.json([
+            "account": ["name": "Acme", "subdomain": "acme", "siteUrl": "https://acme.appshare.site"],
+            "user": ["name": NSNull(), "emailAddress": "anna@example.com", "statusAdmin": true],
+            "folders": ["created": 0, "published": 0, "archived": 0, "total": 0],
+            "files": ["count": 0, "byteSize": 0, "lastUploadAt": NSNull()],
+        ])]
+
+        let summary = try await AccountClient(apiURL: URL(string: "https://api.example.test")!, session: session, accessToken: { "access" }).summary()
+
+        #expect(summary.account.plan == nil)
+        #expect(summary.user.isAdmin)
+    }
+
+    @Test func aUserWithoutEitherNameOfTheRightIsntAnAdmin() async throws {
+        StubProtocol.responses = [Self.json([
+            "account": ["name": "Acme", "subdomain": "acme", "siteUrl": "https://acme.appshare.site"],
+            "user": ["name": "Anna", "emailAddress": "anna@example.com", "admin": false, "statusAdmin": false],
+            "folders": ["created": 0, "published": 0, "archived": 0, "total": 0],
+            "files": ["count": 0, "byteSize": 0, "lastUploadAt": NSNull()],
+        ])]
+
+        let summary = try await AccountClient(apiURL: URL(string: "https://api.example.test")!, session: session, accessToken: { "access" }).summary()
+
+        #expect(!summary.user.isAdmin)
     }
 }
 }

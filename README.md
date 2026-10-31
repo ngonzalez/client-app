@@ -38,13 +38,14 @@ client-app folders                      # the account's folders, by name: id, st
 client-app folders beach --state published --all   # by name or tag, in a state, every page
 client-app publish 12 15                # also unpublish, archive, unarchive
 client-app delete 12                    # asks first; --yes to skip the question
-client-app account                      # the account at a glance: site, user, folders by state, files
+client-app account                      # the account at a glance: site, plan, user, folders by state, files
 client-app status                       # the status page's events (status.appshare.site), newest first
 client-app logout
 ```
 
-A status admin (`status_admin` on the backend) enters the status page's
-events, once signed in with `client-app login --status`:
+An admin (`admin` on the backend: `bin/rails users:admin EMAIL=...`) enters
+the status page's events and manages the accounts' plans, once signed in with
+`client-app login --admin` (`--status` is the same):
 
 ```bash
 client-app status add incident "Slow uploads" --service api   # from now; --at / --until "2026-10-24 14:20"
@@ -52,6 +53,9 @@ client-app status add maintenance "Database upgrade" --at "2026-10-25 22:00" --u
 client-app status end 12                # end an incident or a maintenance, now (or --at)
 client-app status edit 12 --description "Uploads are back to normal speed"
 client-app status delete 12             # asks first; --yes to skip the question
+client-app accounts                     # every account: plan, storage used, users, name
+client-app accounts acme                # one account, its users, their rights and their apps' scopes
+client-app plan set acme 10GB           # 5GB (5 GB, 3 users) or 10GB (10 GB, 10 users)
 ```
 
 | Option | Command | What |

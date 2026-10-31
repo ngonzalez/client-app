@@ -29,9 +29,9 @@ import Testing
         #expect(items["client_id"] == "the-client")
         #expect(items["response_type"] == "code")
         #expect(items["scope"] == "uploads.write folders.read folders.write account.show")
-        let status = client.authorizeURL(redirectURI: "http://127.0.0.1:5000/callback", pkce: pkce, state: "xyz", scope: OAuthClient.statusScope)
-        #expect(URLComponents(url: status, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value
-                == "uploads.write folders.read folders.write account.show status.admin")
+        let admin = client.authorizeURL(redirectURI: "http://127.0.0.1:5000/callback", pkce: pkce, state: "xyz", scope: OAuthClient.adminScope)
+        #expect(URLComponents(url: admin, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value
+                == "uploads.write folders.read folders.write account.show status.admin admin")
         #expect(items["state"] == "xyz")
         #expect(items["code_challenge"] == pkce.challenge)
         #expect(items["code_challenge_method"] == "S256")
