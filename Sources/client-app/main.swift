@@ -4,11 +4,12 @@ import Foundation
 
 let usage = """
 Usage:
-  client-app login [--client-id ID] [--api-url URL] [--no-browser] [--status]
-                                                      sign in through the browser; --status
-                                                      allows the status commands too (status
-                                                      admins only)
-  client-app account                                  the account at a glance
+  client-app login [--client-id ID] [--api-url URL] [--no-browser] [--admin]
+                                                      sign in through the browser; --admin
+                                                      allows the status, accounts and plan
+                                                      commands too (admins only; --status is
+                                                      the same)
+  client-app account                                  the account at a glance, with its plan
   client-app upload [--wait] PATH...                  upload files, or every file of a folder
   client-app folders [QUERY] [--state STATE] [--page N] [--per-page N] [--all]
                                                       list the folders, by name; QUERY searches
@@ -26,6 +27,9 @@ Usage:
   client-app status end ID [--at TIME]                end an incident or a maintenance
   client-app status edit ID [--title T] [--description D] [--service S]
   client-app status delete [--yes] ID
+  client-app accounts                                 every account: plan, storage, users (admins)
+  client-app accounts SUBDOMAIN                       one account, its users and their apps' scopes
+  client-app plan set SUBDOMAIN PLAN                  change the account's plan: 5GB or 10GB
   client-app logout                                   forget the tokens
 
 The client id comes from `bin/rails oauth:register` on the backend; login
@@ -68,7 +72,9 @@ func login(_ arguments: [String]) async throws {
         configuration?.apiURL = url
     }
     let openBrowser = !flag("--no-browser", in: &arguments)
-    let scope = flag("--status", in: &arguments) ? OAuthClient.statusScope : OAuthClient.scope
+    // --status: the name of the right before it covered the accounts too
+    let admin = flag("--admin", in: &arguments)
+    let scope = flag("--status", in: &arguments) || admin ? OAuthClient.adminScope : OAuthClient.scope
     if let unknown = arguments.first {
         fail(unknown.hasPrefix("--") ? "unknown option \(unknown)" : "\(unknown): give the client id with --client-id")
     }
@@ -181,13 +187,14 @@ func account() async throws {
     let summary = try await AccountClient(apiURL: configuration.apiURL, accessToken: { try await client.accessToken() }).summary()
     let folders = summary.folders
     let files = summary.files
-    let size = ByteCountFormatter.string(fromByteCount: Int64(files.byteSize), countStyle: .file)
+    let size = PlanUsage.size(files.byteSize)
     print("Account   \(summary.account.name ?? summary.account.subdomain) (\(summary.account.subdomain))")
     print("Site      \(summary.account.siteUrl)")
+    if let plan = summary.account.plan { print("Plan      \(plan.summary)\(plan.full ? " (full)" : "")") }
     print("User      \([summary.user.name, "<\(summary.user.emailAddress)>"].compactMap { $0 }.joined(separator: " "))")
     print("Folders   \(folders.total): \(folders.created) created, \(folders.published) published, \(folders.archived) archived")
     print("Files     \(files.count), \(size)\(files.lastUploadAt.map { ", last upload \(shown($0))" } ?? "")")
-    if summary.user.statusAdmin { print("Rights    status admin (client-app status)") }
+    if summary.user.isAdmin { print("Rights    admin (client-app status, accounts, plan)") }
 }
 
 func statusClient() -> StatusClient {
@@ -253,6 +260,59 @@ func status(_ arguments: [String]) async throws {
     }
 }
 
+func adminClient() -> AdminClient {
+    let (configuration, client) = signedInClient()
+    return AdminClient(apiURL: configuration.apiURL, accessToken: { try await client.accessToken() })
+}
+
+/// An account on one line: subdomain, plan, what it uses of it, name
+func printAccountLine(_ account: AdminClient.Account, width: Int) {
+    let storage = "\(PlanUsage.size(account.plan.storage.used)) / \(PlanUsage.size(account.plan.storage.limit))"
+    let columns = [account.subdomain.padding(toLength: width + 2, withPad: " ", startingAt: 0),
+                   account.plan.name.padding(toLength: 6, withPad: " ", startingAt: 0),
+                   storage.padding(toLength: 22, withPad: " ", startingAt: 0),
+                   "\(account.plan.users.count) / \(account.plan.users.limit) users".padding(toLength: 16, withPad: " ", startingAt: 0)]
+    print(columns.joined() + account.name)
+}
+
+/// An account, and its users with their rights and their apps' scopes
+func printAccount(_ account: AdminClient.Account) {
+    print("Account   \(account.name) (\(account.subdomain))")
+    print("Site      \(account.siteUrl)")
+    print("Plan      \(account.plan.summary)\(account.plan.full ? " (full)" : "")")
+    if let created = account.createdAt { print("Created   \(shown(created))") }
+    for user in account.users {
+        let rights = [user.admin ? "admin" : nil, user.apiEnabled ? "API" : nil, user.clientAppEnabled ? "client app" : nil].compactMap { $0 }
+        let validated = user.emailAddressValidatedAt == nil ? ", address not validated" : ""
+        print("User      \(user.name) <\(user.emailAddress)>\(rights.isEmpty ? "" : " — " + rights.joined(separator: ", "))\(validated)")
+        for token in user.oauthTokens {
+            let state = token.expired ? "expired, may be renewed" : "active"
+            print("            \(token.application ?? "?"): \(token.scopes.joined(separator: " ")) (\(state), since \(shown(token.createdAt)))")
+        }
+    }
+}
+
+func accounts(_ arguments: [String]) async throws {
+    let client = adminClient()
+    if let subdomain = arguments.first {
+        guard arguments.count == 1 else { fail("accounts takes one subdomain") }
+        printAccount(try await client.account(subdomain))
+        return
+    }
+    let result = try await client.accounts()
+    let width = result.accounts.map(\.subdomain.count).max() ?? 9
+    result.accounts.forEach { printAccountLine($0, width: width) }
+    let plans = result.plans.sorted { $0.value.storage < $1.value.storage }
+        .map { "\($0.key) (\(PlanUsage.size($0.value.storage)), \($0.value.users) users)" }
+    print("\(result.accounts.count) accounts; plans: \(plans.joined(separator: ", "))")
+}
+
+func plan(_ arguments: [String]) async throws {
+    guard arguments.count == 3, arguments[0] == "set" else { fail("plan set needs a subdomain and a plan (5GB or 10GB)") }
+    let account = try await adminClient().setPlan(arguments[1], plan: arguments[2])
+    print("\(account.subdomain): \(account.plan.summary)\(account.plan.full ? " (full)" : "")")
+}
+
 func upload(_ arguments: [String]) async throws {
     var arguments = arguments
     let wait = flag("--wait", in: &arguments)
@@ -294,6 +354,8 @@ do {
     case "folders": try await folders(arguments)
     case "account": try await account()
     case "status": try await status(arguments)
+    case "accounts": try await accounts(arguments)
+    case "plan": try await plan(arguments)
     case let action where FolderClient.Action(rawValue: action) != nil:
         try await change(FolderClient.Action(rawValue: action)!, arguments)
     case "logout":
@@ -304,9 +366,11 @@ do {
     default: fail("unknown command \(command)\n\n\(usage)")
     }
 } catch ClientAppError.http(status: 403, _) {
-    fail(command == "status"
-         ? "this sign-in doesn't allow it: run `client-app login --status` (status admins only)"
+    fail(["status", "accounts", "plan"].contains(command)
+         ? "this sign-in doesn't allow it: run `client-app login --admin` (admins only)"
          : "this sign-in doesn't allow it: run `client-app login` again")
+} catch ClientAppError.http(status: 404, _) where ["accounts", "plan"].contains(command) {
+    fail("no account with that subdomain (see `client-app accounts`)")
 } catch {
     fail(error.localizedDescription)
 }

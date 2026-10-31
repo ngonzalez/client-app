@@ -8,8 +8,9 @@ public struct OAuthClient: Sendable {
     /// Upload files, list and search the folders, change and delete them,
     /// show the account's summary
     public static let scope = "uploads.write folders.read folders.write account.show"
-    /// With the status page's events too (status admins only: `login --status`)
-    public static let statusScope = scope + " status.admin"
+    /// With the status page's events, the accounts and their plans too
+    /// (admins only: `login --admin`)
+    public static let adminScope = scope + " status.admin admin"
 
     let configuration: Configuration
     let store: TokenStore
@@ -41,7 +42,7 @@ public struct OAuthClient: Sendable {
 
     /// Sign in through the browser and keep the tokens
     /// - Parameters:
-    ///   - scope: what the sign-in allows (`statusScope` for a status admin)
+    ///   - scope: what the sign-in allows (`adminScope` for an admin)
     ///   - openURL: opens the approval page (in the default browser)
     @discardableResult
     public func login(scope: String = OAuthClient.scope, openURL: @Sendable (URL) -> Void) async throws -> Token {
