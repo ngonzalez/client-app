@@ -62,7 +62,7 @@ public struct AdminClient: Sendable {
         try await api.send("GET", "admin/accounts/\(subdomain)")
     }
 
-    /// Subscribe the account to another plan (5GB, 10GB: any case)
+    /// Subscribe the account to another plan (Pro, Business: any case)
     public func setPlan(_ subdomain: String, plan: String) async throws -> Account {
         try await api.send("PATCH", "admin/accounts/\(subdomain)", body: ["plan": plan])
     }

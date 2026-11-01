@@ -11,6 +11,17 @@ import Testing
         #expect(PlanUsage.size(10_737_418_240) == "10 GB")
     }
 
+    @Test func saysThereIsNoPlanWithoutOne() {
+        let none = PlanUsage(name: "", storage: .init(used: 2048, limit: 0), users: .init(count: 1, limit: 1))
+
+        #expect(!none.hasPlan)
+        #expect(none.displayName == "No plan")
+        #expect(none.summary == "No plan (site offline): \(PlanUsage.size(2048)) of files, 1 user")
+        #expect(!none.full)
+        #expect(usage.hasPlan)
+        #expect(usage.displayName == "5GB")
+    }
+
     @Test func isFullWhenTheFilesOrTheUsersReachTheLimit() {
         #expect(!usage.full)
         #expect(PlanUsage(name: "5GB", storage: .init(used: 5_368_709_120, limit: 5_368_709_120), users: .init(count: 1, limit: 3)).full)

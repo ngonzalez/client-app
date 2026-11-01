@@ -29,7 +29,7 @@ Usage:
   client-app status delete [--yes] ID
   client-app accounts                                 every account: plan, storage, users (admins)
   client-app accounts SUBDOMAIN                       one account, its users and their apps' scopes
-  client-app plan set SUBDOMAIN PLAN                  change the account's plan: 5GB or 10GB
+  client-app plan set SUBDOMAIN PLAN                  change the account's plan: Pro or Business
   client-app logout                                   forget the tokens
 
 The client id comes from `bin/rails oauth:register` on the backend; login
@@ -269,7 +269,7 @@ func adminClient() -> AdminClient {
 func printAccountLine(_ account: AdminClient.Account, width: Int) {
     let storage = "\(PlanUsage.size(account.plan.storage.used)) / \(PlanUsage.size(account.plan.storage.limit))"
     let columns = [account.subdomain.padding(toLength: width + 2, withPad: " ", startingAt: 0),
-                   account.plan.name.padding(toLength: 6, withPad: " ", startingAt: 0),
+                   account.plan.displayName.padding(toLength: 9, withPad: " ", startingAt: 0),
                    storage.padding(toLength: 22, withPad: " ", startingAt: 0),
                    "\(account.plan.users.count) / \(account.plan.users.limit) users".padding(toLength: 16, withPad: " ", startingAt: 0)]
     print(columns.joined() + account.name)
@@ -308,7 +308,7 @@ func accounts(_ arguments: [String]) async throws {
 }
 
 func plan(_ arguments: [String]) async throws {
-    guard arguments.count == 3, arguments[0] == "set" else { fail("plan set needs a subdomain and a plan (5GB or 10GB)") }
+    guard arguments.count == 3, arguments[0] == "set" else { fail("plan set needs a subdomain and a plan (Pro or Business)") }
     let account = try await adminClient().setPlan(arguments[1], plan: arguments[2])
     print("\(account.subdomain): \(account.plan.summary)\(account.plan.full ? " (full)" : "")")
 }
