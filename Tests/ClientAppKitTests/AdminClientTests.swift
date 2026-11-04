@@ -11,6 +11,12 @@ import Testing
         #expect(PlanUsage.size(10_737_418_240) == "10 GB")
     }
 
+    @Test func saysHowThePlanIsBilled() {
+        let yearly = PlanUsage(name: "Pro", interval: "yearly", storage: .init(used: 0, limit: 5_368_709_120), users: .init(count: 1, limit: 3))
+
+        #expect(yearly.summary == "Pro, yearly: \(PlanUsage.size(0)) of 5 GB, 1 of 3 users")
+    }
+
     @Test func saysThereIsNoPlanWithoutOne() {
         let none = PlanUsage(name: "", storage: .init(used: 2048, limit: 0), users: .init(count: 1, limit: 1))
 
@@ -47,7 +53,7 @@ extension Stubbed {
 
     nonisolated(unsafe) static let account: [String: Any] = [
         "uuid": "3bff5df7", "name": "Acme", "subdomain": "acme", "siteUrl": "https://acme.appshare.site",
-        "plan": ["name": "10GB", "storage": ["used": 2048, "limit": 10_737_418_240], "users": ["count": 1, "limit": 10]],
+        "plan": ["name": "10GB", "interval": "yearly", "storage": ["used": 2048, "limit": 10_737_418_240], "users": ["count": 1, "limit": 10]],
         "createdAt": "2026-10-01T10:00:00Z",
         "users": [[
             "id": 7, "name": "Anna Smith", "emailAddress": "anna@example.com", "emailAddressValidatedAt": NSNull(),
@@ -99,6 +105,18 @@ extension Stubbed {
         #expect(StubProtocol.requests.first?.url == "https://api.example.test/admin/accounts/acme")
         let body = try #require(try JSONSerialization.jsonObject(with: StubProtocol.requests[0].body) as? [String: Any])
         #expect(body as NSDictionary == ["plan": "10gb"] as NSDictionary)
+        #expect(account.plan.interval == "yearly")
+    }
+
+    @Test func changesThePlanAndItsBillingPeriod() async throws {
+        StubProtocol.responses = [Self.json(Self.account)]
+
+        let account = try await client.setPlan("acme", plan: "Pro", interval: "yearly")
+
+        #expect(account.plan.interval == "yearly")
+
+        let body = try #require(try JSONSerialization.jsonObject(with: StubProtocol.requests[0].body) as? [String: Any])
+        #expect(body as NSDictionary == ["plan": "Pro", "interval": "yearly"] as NSDictionary)
     }
 
     @Test func tellsWhyAPlanWasRefused() async throws {
