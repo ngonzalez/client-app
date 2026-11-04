@@ -29,7 +29,9 @@ Usage:
   client-app status delete [--yes] ID
   client-app accounts                                 every account: plan, storage, users (admins)
   client-app accounts SUBDOMAIN                       one account, its users and their apps' scopes
-  client-app plan set SUBDOMAIN PLAN                  change the account's plan: Pro or Business
+  client-app plan set SUBDOMAIN PLAN [PERIOD]         change the account's plan: Pro or Business,
+                                                      billed monthly or yearly (PERIOD; the
+                                                      current one by default)
   client-app logout                                   forget the tokens
 
 The client id comes from `bin/rails oauth:register` on the backend; login
@@ -308,8 +310,12 @@ func accounts(_ arguments: [String]) async throws {
 }
 
 func plan(_ arguments: [String]) async throws {
-    guard arguments.count == 3, arguments[0] == "set" else { fail("plan set needs a subdomain and a plan (Pro or Business)") }
-    let account = try await adminClient().setPlan(arguments[1], plan: arguments[2])
+    guard (3...4).contains(arguments.count), arguments[0] == "set" else {
+        fail("plan set needs a subdomain and a plan (Pro or Business), then monthly or yearly if wanted")
+    }
+    let interval = arguments.count == 4 ? arguments[3].lowercased() : nil
+    if let interval, !AdminClient.intervals.contains(interval) { fail("the period is monthly or yearly, not \(arguments[3])") }
+    let account = try await adminClient().setPlan(arguments[1], plan: arguments[2], interval: interval)
     print("\(account.subdomain): \(account.plan.summary)\(account.plan.full ? " (full)" : "")")
 }
 

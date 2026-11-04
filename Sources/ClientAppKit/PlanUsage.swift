@@ -17,11 +17,15 @@ public struct PlanUsage: Decodable, Sendable, Equatable {
 
     /// Pro or Business; empty without a plan
     public let name: String
+    /// How the plan is billed: monthly or yearly; nil without a plan (or
+    /// from a backend that doesn't send it)
+    public let interval: String?
     public let storage: Storage
     public let users: Users
 
-    public init(name: String, storage: Storage, users: Users) {
+    public init(name: String, interval: String? = nil, storage: Storage, users: Users) {
         self.name = name
+        self.interval = interval
         self.storage = storage
         self.users = users
     }
@@ -36,13 +40,14 @@ public struct PlanUsage: Decodable, Sendable, Equatable {
         hasPlan ? name : "No plan"
     }
 
-    /// "Pro: 49 MB of 5 GB, 1 of 3 users" (binary units, like the backend);
-    /// "No plan (site offline): 49 MB of files, 1 user" without one
+    /// "Pro, monthly: 49 MB of 5 GB, 1 of 3 users" (binary units, like the
+    /// backend); "No plan (site offline): 49 MB of files, 1 user" without one
     public var summary: String {
         guard hasPlan else {
             return "No plan (site offline): \(PlanUsage.size(storage.used)) of files, \(users.count) \(users.count == 1 ? "user" : "users")"
         }
-        return "\(name): \(PlanUsage.size(storage.used)) of \(PlanUsage.size(storage.limit)), \(users.count) of \(users.limit) users"
+        let billed = interval.map { ", \($0)" } ?? ""
+        return "\(name)\(billed): \(PlanUsage.size(storage.used)) of \(PlanUsage.size(storage.limit)), \(users.count) of \(users.limit) users"
     }
 
     /// True when the account's plan has no room left for files or users

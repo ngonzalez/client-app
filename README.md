@@ -56,6 +56,7 @@ client-app status delete 12             # asks first; --yes to skip the question
 client-app accounts                     # every account: plan, storage used, users, name
 client-app accounts acme                # one account, its users, their rights and their apps' scopes
 client-app plan set acme Business       # Pro (5 GB, 3 users) or Business (10 GB, 10 users), given by hand
+client-app plan set acme Pro yearly     # billed monthly or yearly (the current period if left out)
 ```
 
 | Option | Command | What |

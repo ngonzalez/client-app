@@ -62,8 +62,14 @@ public struct AdminClient: Sendable {
         try await api.send("GET", "admin/accounts/\(subdomain)")
     }
 
-    /// Subscribe the account to another plan (Pro, Business: any case)
-    public func setPlan(_ subdomain: String, plan: String) async throws -> Account {
-        try await api.send("PATCH", "admin/accounts/\(subdomain)", body: ["plan": plan])
+    /// The periods a plan is billed for
+    public static let intervals = ["monthly", "yearly"]
+
+    /// Subscribe the account to another plan (Pro, Business: any case),
+    /// billed monthly or yearly (`interval`; nil keeps the current period)
+    public func setPlan(_ subdomain: String, plan: String, interval: String? = nil) async throws -> Account {
+        var body = ["plan": plan]
+        body["interval"] = interval
+        return try await api.send("PATCH", "admin/accounts/\(subdomain)", body: body)
     }
 }
